@@ -4,104 +4,186 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
+  CompleteRequest,
+  CompleteRequestSchema,
+  CompleteResult,
+  ErrorCode,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
-  ListRootsRequestSchema,
   ListToolsRequestSchema,
+  McpError,
+  PromptReference,
   ReadResourceRequestSchema,
+  ResourceTemplateReference,
+  SamplingMessageSchema,
+  ServerCapabilities,
+  SetLevelRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { logger } from "@/utils/logger.js";
 import { name, version } from "../package.json";
-import { FeatureTracker } from "./core/feature-tracker.js";
+import { ACTIVE_FEATURES, ActiveFeature, FeatureTracker } from "./core/feature-tracker.js";
+import { v4 } from "uuid";
+
+enum TOOLS {
+  mcp_test_guide = "mcp_test_guide",
+  test_tool_call = "test_tool_call",
+  trigger_event = "trigger_event",
+  callback = "callback",
+  get_result = "get_result",
+}
+
+const USER_HANDLER_PROMPT = "This test does not require calling any tools, it needs to wait for user operations, and when the user answers 'continue', it will continue to evaluate."
+
 
 const INITIAL_TASKS = [
   // ====don‘t remove this annotation====
-  // {
-  //   id: "task_003",
-  //   title: "Resource Management Test",
-  //   description:
-  //     "Test whether the client can correctly retrieve and read resources from the MCP server",
-  //   protocol: "resources/list,resources/read",
-  //   instructions: [
-  //     "You must ask the user to select and send a resource from the current host. The required resource URI is: test://test-resource/test-resource.txt. If the user cannot send the resource, they may respond with 'Continue' to proceed to the next evaluation task.",
-  //   ],
-  // },
-  // {
-  //   id: "task_004",
-  //   title: "Prompt Management Test",
-  //   description:
-  //     "Test whether the client can correctly retrieve and use prompts from the MCP server",
-  //   protocol: "prompts/list,prompts/get",
-  //   instructions: [
-  //     "You must ask the user to send a prompt named 'test_prompt' to the server. If the prompt cannot be sent, the user may respond with 'Continue' to proceed to the next evaluation task.",
-  //   ],
-  // },
-  // ====don’t remove this annotation====
   {
-    id: "task_005",
-    title: "Root Directory List Test",
+    title: "Resource Management Test",
     description:
-      "Test whether the client can correctly retrieve the root directory list of the MCP server",
-    protocol: "roots/list",
+      "Test whether the client can correctly retrieve and read resources from the MCP server",
+    protocol: "resources/list,resources/read",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/roots/list_changed' event. This will test the client's ability to handle root directory list notifications and subsequently call the roots/list endpoint.",
+      USER_HANDLER_PROMPT,
+      "You must ask the user to select and send a resource from the current host. Before user send new message, you shouldn't do anything.",
+      "The required resource URI is: test://test-resource/test-resource.txt.",
     ],
   },
   {
-    id: "task_006",
+    title: "Prompt Management Test",
+    description:
+      "Test whether the client can correctly retrieve and use prompts from the MCP server",
+    protocol: "prompts/list,prompts/get",
+    instructions: [
+      USER_HANDLER_PROMPT,
+      "You must ask the user to send a prompt named 'test_prompt' to the server. ",
+    ],
+  },
+  {
+    title: "Completion Management Test",
+    description:
+      "Test whether the client can correctly retrieve and use completions from the MCP server",
+    protocol: "completions/complete",
+    instructions: [
+      USER_HANDLER_PROMPT,
+      "You must ask the user to send prompt named 'test_completion' to the server.",
+      "test_completion is a prompt that will trigger a completion from the server, if host is support completion",
+    ],
+  },
+  {
+    title: "Root Directory List Test",
+    description:
+      "Test whether the MCP server can correctly retrieve the root directory list of the client roots",
+    protocol: "roots/list",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'roots/list' event. This will test the client's ability to handle root directory list notifications and subsequently call the roots/list endpoint.`,
+    ],
+  },
+  {
+    title: "Logging Set Level Test",
+    description:
+      "Test the client's ability to set the logging level of the Mcp Server",
+    protocol: "logging/setLevel",
+    instructions: [
+      USER_HANDLER_PROMPT,
+      `You must ask user to change the logging level (e.g. 'info', 'warning', 'error'), if user input 'continue', you should skip this step. `,
+    ],
+  },
+  {
     title: "Resource List Changed Notification Test",
     description:
       "Test the client's ability to receive and respond to resource list change notifications",
     protocol: "notifications/resources/list_changed",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/resources/list_changed' event. This will test whether the client properly receives the notification and responds by calling the resources/list endpoint to refresh its resource cache.",
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/resources/list_changed' event. This will test whether the client properly receives the notification and responds by calling the resources/list endpoint to refresh its resource cache.`,
     ],
   },
   {
-    id: "task_007",
     title: "Prompt List Changed Notification Test",
     description:
       "Test the client's ability to receive and respond to prompt list change notifications",
     protocol: "notifications/prompts/list_changed",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/prompts/list_changed' event. This will test whether the client properly receives the notification and responds by calling the prompts/list endpoint to refresh its prompt cache.",
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/prompts/list_changed' event. This will test whether the client properly receives the notification and responds by calling the prompts/list endpoint to refresh its prompt cache.`,
     ],
   },
   {
-    id: "task_008",
     title: "Tools List Changed Notification Test",
     description:
       "Test the client's ability to receive and respond to tools list change notifications",
     protocol: "notifications/tools/list_changed",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/tools/list_changed' event. This will test whether the client properly receives the notification and responds by calling the tools/list endpoint to refresh its tool cache.",
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/tools/list_changed' event. This will test whether the client properly receives the notification and responds by calling the tools/list endpoint to refresh its tool cache.`,
     ],
   },
   {
-    id: "task_009",
     title: "Progress Notification Test",
     description:
       "Test the client's ability to receive and display progress notifications",
     protocol: "notifications/progress",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/progress' event. This will test whether the client can properly receive and display progress updates from the server, including progress tokens, current progress values, and total progress values.",
-      "Once you receive the progress notification, use the 'callback' tool with event_name 'notifications/progress' to confirm that you have successfully received and processed the notification."
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/progress' event. This will test whether the client can properly receive and display progress updates from the server.`,
+      "You Must ask user to input the progress message content (a float number, e.g. '0.52134213222121') to continue. if user input 'continue', you should skip this step. ",
+      `If user input the progress message content, you should call the tool '${TOOLS.callback}' with event_name 'notifications/progress' to confirm that you have successfully received and processed the notification.`,
     ],
   },
   {
-    id: "task_010",
     title: "Message Notification Test",
     description:
       "Test the client's ability to receive and process server message notifications",
     protocol: "notifications/message",
     instructions: [
-      "Use the trigger_event tool to fire the 'notifications/message' event. This will test whether the client can properly receive and process server-sent messages, including different log levels (info, warning, error) and message content.",
-      "Once you receive the message notification, use the 'callback' tool with event_name 'notifications/message' to confirm that you have successfully received and processed the notification."
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/message' event. This will test whether the client can properly receive and process server-sent messages, including different log levels (info, warning, error) and message content.`,
+      `You Must ask user to input the message content (a string, e.g. ${v4()}) to continue. if user input 'continue', you should skip this step. `,
+      `If user input the message, you should call the tool '${TOOLS.callback}' with event_name 'notifications/message' to confirm that you have successfully received and processed the notification.`,
     ],
   },
+  {
+    title: "Sampling Create Message Test",
+    description:
+      "Test the client's ability to create a message from the Mcp Server",
+    protocol: "sampling/createMessage",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'sampling/createMessage' event. `,
+      "Tell User if client has alert some message, must access the request of host application.",
+      "If nothing alert, user should input 'continue' to skip this step."
+    ],
+  },
+  {
+    title: "Elicitation Create Test",
+    description:
+      "Test the client's ability to create a elicitation from the Mcp Server",
+    protocol: "elicitation/create",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'elicitation/create' event. `,
+      "Tell User if client has alert some message, must access the request of host application.",
+      "If nothing alert, user should input 'continue' to skip this step.",
+    ],
+  },
+  {
+    title: "Ping Test",
+    description:
+      "Test the client's ability to ping the Mcp Server",
+    protocol: "ping",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'ping' event. `,
+    ],
+  }
 
 ];
+
+const replyTextMessage = (message: string) => {
+  return {
+    content: [
+      {
+        type: "text",
+        text: message,
+      },
+    ]
+  }
+}
+
+
 
 export class McpHostTestServer {
   public server: McpServer;
@@ -109,23 +191,30 @@ export class McpHostTestServer {
   private currentTaskIndex = 0;
   private testIntervalId?: NodeJS.Timeout;
   private testTasks: Array<{
-    id: string;
     title: string;
     description: string;
-    protocol: string;
     instructions: string[];
+    protocol?: string;
   }> = [];
   private pendingEvents: Map<string, {
     eventType: string;
     expectedCallback: string;
     timestamp: number;
     data?: any;
+    timer?: NodeJS.Timeout;
   }> = new Map();
+  private logMessage: string = "";
+  private progressMessage: string = "";
+  private logLevel: string = "info";
 
   constructor() {
     this.tracker = new FeatureTracker();
+    this.logMessage = "";
+    this.progressMessage = "";
+    this.logLevel = "info";
     this.initializeTestTasks();
 
+    type T = keyof ServerCapabilities
     this.server = new McpServer(
       {
         name,
@@ -133,30 +222,43 @@ export class McpHostTestServer {
       },
       {
         capabilities: {
-          tools: {},
-          resources: {},
-          prompts: {},
-          logging: {},
+          tools: {
+            listChanged: true,
+          },
+          resources: {
+            listChanged: true,
+          },
+          prompts: {
+            listChanged: true,
+          },
           completions: {},
+          logging: {},
           experimental: {},
         },
       }
     );
     this.setupToolHandlers();
     this.setupPromptHandlers();
-    this.setupRootsHandlers();
     this.setupResourcesHandlers();
+    this.setupCompletionHandlers();
+    this.setupLoggingHandlers();
   }
 
   private initializeTestTasks() {
     this.testTasks = INITIAL_TASKS;
   }
 
+  private setupLoggingHandlers() {
+    this.server.server.setRequestHandler(SetLevelRequestSchema, (request) => {
+      this.logLevel = request.params.level;
+      return replyTextMessage(`Logging level set to ${this.logLevel}`)
+    });
+  }
+
+
   private setupResourcesHandlers() {
     this.server.server.setRequestHandler(ListResourcesRequestSchema, () => {
       this.checkAndClearPendingEvent("resources/list");
-      // 标记 resources/list 功能完成
-      this.tracker.recordFeatureCall("resources/list", true);
       return {
         resources: [
           {
@@ -171,9 +273,6 @@ export class McpHostTestServer {
     this.server.server.setRequestHandler(
       ReadResourceRequestSchema,
       (request) => {
-        this.checkAndClearPendingEvent("resources/read");
-        this.tracker.recordFeatureCall("resources/read", true);
-        this.tracker.recordFeatureCall("resources/list", true);
         return {
           content: [
             {
@@ -191,18 +290,15 @@ export class McpHostTestServer {
     // Tool list handler
     this.server.server.setRequestHandler(ListToolsRequestSchema, () => {
       this.checkAndClearPendingEvent("tools/list");
-      // 标记 tools/list 功能完成
-      this.tracker.recordFeatureCall("tools/list", true);
       return {
         tools: [
           {
-            name: "mcp_test_guide",
+            name: TOOLS.mcp_test_guide,
             description:
               `
     Assessment task iteration tool that guides users to complete MCP protocol testing step by step.
     You must follow the instructions for each task and complete the specified operation before proceeding to the next task.
     After finishing the current task, use this tool to move to the next step.
-
     Before starting the assessment, you must call this tool with the following parameters to reset the test state:
     After completing all tasks, you must call tool 'get_result' to get the test result.
     `,
@@ -238,41 +334,22 @@ export class McpHostTestServer {
             },
           },
           {
-            name: "trigger_event",
+            name: TOOLS.trigger_event,
             description: "Trigger an event and track whether the corresponding callback method is executed",
             inputSchema: {
               type: "object",
               properties: {
                 event_type: {
                   type: "string",
-                  description: "Type of event to trigger (e.g., 'notifications/resources/list_changed', 'notifications/prompts/list_changed')",
-                  enum: [
-                    "notifications/roots/list_changed",
-                    "notifications/resources/list_changed",
-                    "notifications/prompts/list_changed",
-                    "notifications/tools/list_changed",
-                    "notifications/progress",
-                    "notifications/message"
-                  ],
-                },
-                data: {
-                  type: "object",
-                  description: "Event data payload (optional)",
+                  description: "Type of event to trigger",
+                  enum: ACTIVE_FEATURES,
                 },
               },
               required: ["event_type"],
             },
           },
           {
-            name: "get_result",
-            description: "Get the current test results showing which MCP features have passed and which have failed",
-            inputSchema: {
-              type: "object",
-              properties: {},
-            },
-          },
-          {
-            name: "callback",
+            name: TOOLS.callback,
             description: "Callback tool to confirm that a notification event has been received and processed by the client",
             inputSchema: {
               type: "object",
@@ -293,7 +370,14 @@ export class McpHostTestServer {
               required: ["event_name"],
             },
           },
-
+          {
+            name: TOOLS.get_result,
+            description: "Get the test results showing which MCP features have passed and which have failed. This tool should be called after all tasks are completed.",
+            inputSchema: {
+              type: "object",
+              properties: {},
+            },
+          },
         ],
       };
     });
@@ -301,29 +385,27 @@ export class McpHostTestServer {
     this.server.server.setRequestHandler(
       CallToolRequestSchema,
       async (request) => {
-        this.tracker.recordFeatureCall(request.method, true);
         const { name, arguments: args } = request.params;
         switch (name) {
-          case "mcp_test_guide":
-            return await this.handleTestGuide(
+          case TOOLS.mcp_test_guide:
+            return this.handleTestGuide(
               args as {
                 step: number;
                 action: "next" | "current" | "reset";
               }
             );
-          case "test_tool_call":
+          case TOOLS.test_tool_call:
             return { type: "text", text: "success" };
-          case "trigger_event":
-            return await this.handleTriggerEvent(
+          case TOOLS.trigger_event:
+            return this.handleTriggerEvent(
               args as {
-                event_type: string;
-                data?: any;
+                event_type: ActiveFeature;
               }
             );
-          case "get_result":
+          case TOOLS.get_result:
             return this.handleGetResult();
-          case "callback":
-            return await this.handleCallback(
+          case TOOLS.callback:
+            return this.handleCallback(
               args as {
                 event_name: string;
                 message?: string;
@@ -347,14 +429,10 @@ export class McpHostTestServer {
       this.currentTaskIndex = 0;
       this.tracker.reset();
       this.pendingEvents.clear();
-      return {
-        content: [
-          {
-            type: "text",
-            text: "🔄 Test progress has been reset, will start from the first task. Please call this tool again to start testing.",
-          },
-        ],
-      };
+      this.logLevel = "info";
+      this.logMessage = "";
+      this.progressMessage = "";
+      return replyTextMessage("Test progress has been reset, will start from the first task. Please call this tool again to start testing.")
     }
 
     if (action === "next" && requestedStep) {
@@ -365,48 +443,23 @@ export class McpHostTestServer {
     }
 
     if (this.currentTaskIndex >= this.testTasks.length) {
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              "🎉 Congratulations! All assessment tasks have been completed!\n\n📊 Test Summary:\n" +
-              `- Total tasks: ${this.testTasks.length}\n` +
-              `- Completed: ${this.testTasks.length}\n` +
-              "- Completion rate: 100%\n\n" +
-              "You have successfully completed all core functionality tests of the MCP protocol.",
-          },
-        ],
-      };
+      return replyTextMessage("🎉 Congratulations! All assessment tasks have been completed! Please call the tool 'get_result' to get the test result.")
     }
 
     const currentTask = this.testTasks[this.currentTaskIndex];
-    const progressText = `${this.currentTaskIndex + 1}/${this.testTasks.length
-      }`;
+    const progressText = `${this.currentTaskIndex + 1}/${this.testTasks.length}`;
 
     const response = {
       content: [
         {
           type: "text",
           text:
-            `📋 **MCP Protocol Assessment Task ${progressText}**\n\n` +
-            `🎯 **Task ID**: ${currentTask.id}\n` +
-            `📝 **Task Title**: ${currentTask.title}\n` +
-            `🔗 **Test Protocol**: ${currentTask.protocol}\n` +
-            `📖 **Task Description**: ${currentTask.description}\n\n` +
-            "📋 **Instructions**:\n" +
-            currentTask.instructions
-              .map((instruction, index) => `${index + 1}. ${instruction}`)
-              .join("\n") +
-            "\n\n" +
-            `📊 **Current Progress**: ${progressText}\n\n` +
-            "⚡ **Continue Testing**: After completing the current task, please call this tool and pass in the next step number:\n" +
-            "```json\n" +
-            "{\n" +
-            `  "step": ${this.currentTaskIndex + 2},\n` +
-            `  "action": "next"\n` +
-            "}\n" +
-            "```\n\n" +
+            `**Task ID**: ${this.currentTaskIndex + 1}\n` +
+            `**MCP Protocol Assessment Task ${progressText}**\n\n` +
+            `**Task Title**: ${currentTask.title}\n` +
+            `**Test Protocol**: ${currentTask.protocol}\n` +
+            `**Task Description**: ${currentTask.description}\n\n` +
+            `**Task Instructions**: ${currentTask.instructions.join("\n")}\n\n` +
             (this.currentTaskIndex < this.testTasks.length - 1
               ? "🔄 **Continue**: Please complete the current test and continue to the next task"
               : "🏁 **Almost Done**: This is the last test task"),
@@ -467,80 +520,153 @@ export class McpHostTestServer {
     };
   }
 
-  private async handleTriggerEvent(args: {
-    event_type: string;
-    data?: any;
-  }) {
-    const { event_type, data } = args;
 
-    // Map event types to their expected callback methods
+  private _replyTriggerEvent(type: 'success' | 'error', event_type: ActiveFeature) {
+    const replySuccess = (event_type: ActiveFeature) => {
+      return replyTextMessage(`Event triggered successfully! ${event_type}`)
+    }
+
+    const replyUnsupported = (event_type: ActiveFeature) => {
+      return replyTextMessage(`Client does not support ${event_type}, please continue to the next step.`)
+    }
+    return type === 'success' ? replySuccess(event_type) : replyUnsupported(event_type)
+  }
+
+  private _replyAskUserInput() {
+    return replyTextMessage(`Please ask user to input the following message to continue. if cant get this message, input "continue" to skip this step.
+          if user input "continue", you should skip this step. if user input the message, you should call the tool "callback", pass the raw message (ensure the message is only include user input content) to confirm that the message has been received and processed by the client.
+          `)
+  }
+
+  private _triggerRootList() {
+    this.server.server.listRoots().then(roots => {
+      this.tracker.recordFeatureCall("roots/list", true);
+    });
+  }
+
+  private _triggerSamplingCreateMessage() {
+    this.server.server.createMessage({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: "Who are you?",
+          },
+        },
+      ],
+      maxTokens: 100,
+    }).then(res => {
+      this.tracker.recordFeatureCall("sampling/createMessage", true);
+    })
+  }
+
+  private _triggerElicitationCreate() {
+    this.server.server.elicitInput({
+      message: `Can you get this message?`,
+      requestedSchema: {
+        type: "object",
+        properties: {
+          isGetElicitation: {
+            type: "boolean",
+            title: "Can get elicitation",
+            description: "Can you get elicitation action?"
+          },
+        },
+        required: ["isGetElicitation"]
+      }
+    }).then(res => {
+      this.tracker.recordFeatureCall("elicitation/create", true);
+    })
+  }
+
+  private _triggerManualEvent(event_type: ActiveFeature) {
+    const capabilities = this.server.server.getClientCapabilities()
+
+    if (event_type === "roots/list") {
+      if (!capabilities?.roots) {
+        return this._replyTriggerEvent('error', event_type)
+      }
+      this._triggerRootList()
+      return this._replyTriggerEvent('success', event_type)
+    }
+
+    if (event_type === "sampling/createMessage") {
+      if (!capabilities?.sampling) {
+        return this._replyTriggerEvent('error', event_type)
+      }
+      this._triggerSamplingCreateMessage()
+      return this._replyTriggerEvent('success', event_type)
+    }
+
+    if (event_type === 'elicitation/create') {
+      if (!capabilities?.elicitation) {
+        return this._replyTriggerEvent('error', event_type)
+      }
+      this._triggerElicitationCreate()
+      return this._replyTriggerEvent('success', event_type)
+    }
+    throw new Error(`Unsupported event type: ${event_type}`)
+  }
+
+  private async _triggerEnsureCallbackEvent(event_type: ActiveFeature, data?: any) {
     const eventCallbackMap: Record<string, string> = {
-      "notifications/roots/list_changed": "roots/list",
       "notifications/resources/list_changed": "resources/list",
       "notifications/prompts/list_changed": "prompts/list",
       "notifications/tools/list_changed": "tools/list",
-      "notifications/progress": "progress_callback",
-      "notifications/message": "message_callback"
     };
 
-    const expectedCallback = eventCallbackMap[event_type];
-    if (!expectedCallback) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `❌ Unknown event type: ${event_type}`,
-          },
-        ],
-      };
+    if (eventCallbackMap[event_type]) {
+      const timer = setTimeout(() => {
+        this.pendingEvents.delete(event_type);
+      }, 10000)
+      this.pendingEvents.set(event_type, {
+        eventType: event_type,
+        expectedCallback: eventCallbackMap[event_type],
+        timestamp: Date.now(),
+        data,
+        timer,
+      });
+
+
+
     }
-
-    // Generate unique event ID
-    const eventId = `${event_type}_${Date.now()}`;
-
-    // Store the pending event
-    this.pendingEvents.set(eventId, {
-      eventType: event_type,
-      expectedCallback,
-      timestamp: Date.now(),
-      data,
-    });
 
     try {
-      // Send the notification based on event type
       await this.sendNotificationByType(event_type, data);
-
-      // Record that the notification has been sent but not yet completed (waiting for callback)
-      logger.info(`📤 Notification sent: ${event_type}, waiting for callback: ${expectedCallback}`);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text:
-              `✅ Event triggered successfully!\n\n` +
-              `🎯 **Event**: ${event_type}\n` +
-              `🔍 **Expected Callback**: ${expectedCallback}\n` +
-              `⏰ **Event ID**: ${eventId}\n` +
-              `📊 **Status**: Waiting for callback execution...\n\n` +
-              `The system will monitor whether the expected callback method is executed.\n` +
-              `Once the callback is executed, the feature will be marked as completed in FeatureTracker.`,
-          },
-        ],
-      };
+      return this._replyTriggerEvent('success', event_type)
     } catch (error) {
-      // Remove the pending event if sending failed
-      this.pendingEvents.delete(eventId);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: `❌ Failed to trigger event: ${error instanceof Error ? error.message : 'Unknown error'}`,
-          },
-        ],
-      };
+      return this._replyTriggerEvent('error', event_type)
     }
+  }
+
+  private async handleTriggerEvent(args: {
+    event_type: ActiveFeature;
+  }) {
+    const { event_type } = args;
+
+    if (["roots/list", "sampling/createMessage", "elicitation/create"].includes(event_type)) {
+      return this._triggerManualEvent(event_type)
+    }
+
+    if (["notifications/resources/list_changed", "notifications/prompts/list_changed", "notifications/tools/list_changed"].includes(event_type)) {
+      return this._triggerEnsureCallbackEvent(event_type)
+    }
+
+    if (["ping", "pong"].includes(event_type)) {
+      this.server.server.ping().then(res => {
+        this.tracker.recordFeatureCall("ping", true);
+        this.tracker.recordFeatureCall("pong", true);
+      })
+      return this._replyTriggerEvent('success', event_type)
+    }
+
+    if (["notifications/message", "notifications/progress"].includes(event_type)) {
+      this.sendNotificationByType(event_type)
+      return this._replyAskUserInput()
+    }
+
+    throw new Error(`Unsupported event type: ${event_type}`)
   }
 
   private async handleCallback(args: {
@@ -549,29 +675,31 @@ export class McpHostTestServer {
   }) {
     const { event_name, message } = args;
 
-    const eventCleared = this.checkAndClearPendingEventByType(event_name);
-
-    if (eventCleared) {
+    if (event_name === "notifications/message") {
+      if (message === this.logMessage) {
+        this.markNotificationFeatureAsCompleted(event_name);
+      } else {
+        console.log("message not match", message, this.logMessage);
+      }
       return {
         content: [
           {
             type: "text",
-            text: "success"
-          },
-        ],
-      };
-    } else {
-      this.markNotificationFeatureAsCompleted(event_name);
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: "success"
+            text: `Callback received: ${event_name}, message: ${message}`
           },
         ],
       };
     }
+
+    if (event_name === "notifications/progress") {
+      if (message === this.progressMessage) {
+        this.markNotificationFeatureAsCompleted(event_name);
+      } else {
+        console.log("message not match", message, this.progressMessage);
+      }
+    }
+
+    throw new Error(`Unsupported callback event name: ${event_name}`)
   }
 
   private async sendNotificationByType(eventType: string, data?: any) {
@@ -604,26 +732,24 @@ export class McpHostTestServer {
         break;
 
       case "notifications/progress":
+        this.progressMessage = Math.random().toString();
         await this.server.server.notification({
           method: "notifications/progress",
           params: {
-            progressToken: "test_progress",
-            progress: data?.progress || 50,
-            total: data?.total || 100,
-            ...data,
+            progressMessage: this.progressMessage,
           },
         });
         break;
 
       case "notifications/message":
+        this.logMessage = v4();
         await this.server.server.notification({
           method: "notifications/message",
           params: {
             level: data?.level || "info",
-            logger: "mcp-test-server",
+            logger: "mcp-host-evals",
             data: {
-              message: data?.message || "Test notification message",
-              ...data,
+              message: this.logMessage,
             },
           },
         });
@@ -638,28 +764,13 @@ export class McpHostTestServer {
     let eventCleared = false;
     for (const [eventId, pendingEvent] of this.pendingEvents.entries()) {
       if (pendingEvent.expectedCallback === method) {
+        clearTimeout(pendingEvent.timer);
         this.pendingEvents.delete(eventId);
         logger.info(
           `✅ Pending event cleared: ${pendingEvent.eventType} -> ${method} executed`
         );
 
         this.markNotificationFeatureAsCompleted(pendingEvent.eventType);
-        eventCleared = true;
-      }
-    }
-    return eventCleared;
-  }
-
-  private checkAndClearPendingEventByType(eventType: string) {
-    let eventCleared = false;
-    for (const [eventId, pendingEvent] of this.pendingEvents.entries()) {
-      if (pendingEvent.eventType === eventType) {
-        this.pendingEvents.delete(eventId);
-        logger.info(
-          `✅ Pending event cleared: ${eventType} -> callback executed`
-        );
-
-        this.markNotificationFeatureAsCompleted(eventType);
         eventCleared = true;
       }
     }
@@ -686,95 +797,44 @@ export class McpHostTestServer {
         featureName = "notifications/message";
         break;
       default:
-        logger.warn(`Unknown event type for feature tracking: ${eventType}`);
+        console.warn(`Unknown event type for feature tracking: ${eventType}`);
         return;
     }
 
     this.tracker.recordFeatureCall(featureName as any, true);
   }
 
-  public getPendingEvents(): Array<{
-    id: string;
-    eventType: string;
-    expectedCallback: string;
-    elapsedTime: number;
-    data?: any;
-  }> {
-    const now = Date.now();
-    const result: Array<{
-      id: string;
-      eventType: string;
-      expectedCallback: string;
-      elapsedTime: number;
-      data?: any;
-    }> = [];
-
-    for (const [eventId, event] of this.pendingEvents.entries()) {
-      result.push({
-        id: eventId,
-        eventType: event.eventType,
-        expectedCallback: event.expectedCallback,
-        elapsedTime: now - event.timestamp,
-        data: event.data,
-      });
-    }
-
-    return result;
-  }
-
-  public clearExpiredEvents(maxAgeMs: number = 30000): Array<{
-    id: string;
-    eventType: string;
-    expectedCallback: string;
-  }> {
-    const now = Date.now();
-    const expiredEvents: Array<{
-      id: string;
-      eventType: string;
-      expectedCallback: string;
-    }> = [];
-
-    for (const [eventId, event] of this.pendingEvents.entries()) {
-      if (now - event.timestamp > maxAgeMs) {
-        expiredEvents.push({
-          id: eventId,
-          eventType: event.eventType,
-          expectedCallback: event.expectedCallback,
-        });
-        this.pendingEvents.delete(eventId);
-      }
-    }
-
-    if (expiredEvents.length > 0) {
-      logger.info(`Cleared ${expiredEvents.length} expired events`, expiredEvents);
-    }
-
-    return expiredEvents;
-  }
-
   private setupPromptHandlers() {
-    // Prompt list handler
     this.server.server.setRequestHandler(ListPromptsRequestSchema, async () => {
       this.checkAndClearPendingEvent("prompts/list");
-      this.tracker.recordFeatureCall("prompts/list", true);
       return {
         prompts: [
           {
             name: "test_prompt",
             description: "test prompt for MCP functionality testing",
           },
+          {
+            name: "test_completion",
+            description: "test completion for MCP functionality testing",
+            arguments: [
+              {
+                name: "prompt",
+                description: "test prompt for MCP functionality testing",
+                type: "string",
+              }
+            ],
+            required: ["prompt"],
+          }
         ],
       };
     });
 
-    // Prompt get handler
     this.server.server.setRequestHandler(
       GetPromptRequestSchema,
       async (request) => {
-        this.checkAndClearPendingEvent("prompts/get");
-        this.tracker.recordFeatureCall("prompts/get", true);
         const { name, arguments: args } = request.params;
 
+        this.checkAndClearPendingEvent("prompts/get");
         if (name === "test_prompt") {
           return {
             description: "MCP functionality test prompt",
@@ -783,53 +843,87 @@ export class McpHostTestServer {
                 role: "user",
                 content: {
                   type: "text",
-                  text: `continue test`,
+                  text: `test is passed,continue test`,
                 },
               },
             ],
           };
         }
 
-        if (name === "guide_prompt") {
-          console.log("status:", JSON.stringify(this.tracker.featuresStatus, null, 2));
-          const step = args?.step || "1";
+        if (name === "test_completion") {
+          const { prompt } = args as { prompt: string };
           return {
-            description: "MCP test guidance prompt",
+            description: "MCP functionality test completion",
             messages: [
               {
                 role: "user",
                 content: {
                   type: "text",
-                  text: `You are executing step ${step} of the MCP functionality test. Please follow the guidance to complete the test.`,
+                  text: `continue test, with user input prompt: ${prompt}`,
                 },
-              },
-            ],
-          };
+              }
+            ]
+          }
         }
-
         throw new Error(`Unknown prompt: ${name}`);
       }
     );
-
   }
 
-  private setupRootsHandlers() {
-    this.server.server.setRequestHandler(ListRootsRequestSchema, async () => {
-      this.checkAndClearPendingEvent("roots/list");
-      this.tracker.recordFeatureCall("roots/list", true);
-      return {
-        roots: [
-          {
-            uri: "file:///tmp/mcp-test",
-            name: "MCP Test Directory",
-          }
-        ],
-      };
-    });
+  private setupCompletionHandlers() {
+    this.server.server.setRequestHandler(
+      CompleteRequestSchema,
+      async (request) => {
+        switch (request.params.ref.type) {
+          case "ref/prompt":
+            return this.handlePromptCompletion(request, request.params.ref);
+          case "ref/resource":
+            return this.handleResourceCompletion(request, request.params.ref);
+
+          default:
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Invalid completion reference: ${request.params.ref}`,
+            );
+        }
+      }
+    )
+  }
+
+
+  private async handlePromptCompletion(
+    request: CompleteRequest,
+    ref: PromptReference,
+  ): Promise<CompleteResult> {
+    return {
+      completion: {
+        values: ["test completion value"],
+      },
+    }
+  }
+
+  private async handleResourceCompletion(
+    request: CompleteRequest,
+    ref: ResourceTemplateReference,
+  ): Promise<CompleteResult> {
+    return {
+      completion: {
+        values: ["test completion value"],
+      },
+    }
   }
 
   async connect(transport: StreamableHTTPServerTransport): Promise<void> {
-    await this.server.server.connect(transport);
+    const rawOnMessage = transport.onmessage?.bind(transport);
+    transport.onmessage = (message) => {
+      rawOnMessage?.(message);
+      if ((message as any)?.method) {
+        this.tracker.recordFeatureCall((message as any).method as any, true);
+      }
+    }
+
+
+    await this.server.connect(transport);
   }
 
   async stop(): Promise<void> {

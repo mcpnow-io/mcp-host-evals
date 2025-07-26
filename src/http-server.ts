@@ -13,7 +13,6 @@ const HOST = process.env.HOST || "localhost";
 
 class HttpMcpServer {
   private httpServer: express.Express;
-
   private transports = {} as Record<string, StreamableHTTPServerTransport>;
 
   constructor() {
@@ -45,8 +44,8 @@ class HttpMcpServer {
           }
         };
 
-        const server = new McpHostTestServer();
-        await server.connect(transport);
+        const testServer = new McpHostTestServer();
+        await testServer.connect(transport);
       } else {
         // Invalid request
         res.status(400).json({

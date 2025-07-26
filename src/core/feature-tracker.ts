@@ -1,67 +1,62 @@
 import { EventEmitter } from "events";
+import { omit } from "lodash-es";
 
 export const PASSIVE_FEATURES = [
-  // "initialize",
-  // "notifications/initialized",
-  // 核心工具功能
+  "initialize",
+
+  // tools, skip test, it always implemented.
   "tools/list",
   "tools/call",
 
-  // 资源管理功能
+  // resources
   "resources/list",
   "resources/read",
   "resources/templates/list",
 
-  "resources/subscribe",
-  "resources/unsubscribe",
+  // TODO: unimplemented. resources subscribe, unimplemented.
+  // "resources/subscribe",
+  // "resources/unsubscribe",
 
-  // 提示功能
   "prompts/list",
   "prompts/get",
 
-  // 根目录功能
-  "roots/list",
-
-  // 补全功能
   "completion/complete",
 
-  // 日志功能
   "logging/setLevel",
-
-  // Ping/Pong机制
-  "ping",
-  "pong",
 ] as const;
 type PassiveFeature = (typeof PASSIVE_FEATURES)[number];
 
 export const ACTIVE_FEATURES = [
-  // 基础通知
-  "notifications/progress",
-  "notifications/message",
-  "notifications/cancelled",
+  // initialzie
   "notifications/initialized",
 
-  // 变更通知
+  // active features with standard callback event
   "notifications/resources/list_changed",
-  "notifications/resources/updated",
+  // "notifications/resources/updated", // TODO: unimplemented.
   "notifications/tools/list_changed",
   "notifications/prompts/list_changed",
-  "notifications/roots/list_changed",
-  "notifications/logging/message",
+  // "notifications/roots/list_changed", // cant implement, only trigger by client, not server.
 
-  // 采样请求（服务器主动发起）
+  // active features without callback
+  "roots/list",
   "sampling/createMessage",
-
-  // 用户交互请求（可选）
   "elicitation/create",
 
-  // Ping/Pong机制
+  // active features with custom callback
+  "notifications/progress",
+  "notifications/message",
+
+
+  // others
   "ping",
   "pong",
-];
-type ActiveFeature = (typeof ACTIVE_FEATURES)[number];
+  // "notifications/cancelled", // TODO unimplemented.
+
+] as const;
+export type ActiveFeature = (typeof ACTIVE_FEATURES)[number];
 
 export class FeatureTracker extends EventEmitter {
+  // 记录所有功能的状态
   private _featuresStatus: Record<
     ActiveFeature | PassiveFeature,
     { name: ActiveFeature | PassiveFeature; isPassed: boolean }
@@ -74,7 +69,7 @@ export class FeatureTracker extends EventEmitter {
             isPassed: false,
           },
         }),
-        {}
+        {} as Record<PassiveFeature, { name: PassiveFeature; isPassed: boolean }>
       ),
       ...ACTIVE_FEATURES.reduce(
         (acc, feature) => ({
@@ -84,7 +79,7 @@ export class FeatureTracker extends EventEmitter {
             isPassed: false,
           },
         }),
-        {}
+        {} as Record<ActiveFeature, { name: ActiveFeature; isPassed: boolean }>
       ),
     };
 
@@ -93,6 +88,9 @@ export class FeatureTracker extends EventEmitter {
   }
 
   recordFeatureCall(feature: ActiveFeature | PassiveFeature, success: boolean) {
+    if (!this._featuresStatus[feature] || this._featuresStatus[feature].isPassed) {
+      return;
+    }
     console.log("recordFeatureCall", feature, success);
     this._featuresStatus[feature].isPassed = success;
   }
@@ -102,7 +100,8 @@ export class FeatureTracker extends EventEmitter {
   }
 
   reset() {
-    Object.values(this._featuresStatus).forEach((feature) => {
+    // 重置除初始化外的所有功能状态
+    Object.values(omit(this._featuresStatus, ['notifications/initialized', 'initialize', 'ping', 'pong'])).forEach((feature) => {
       feature.isPassed = false;
     });
   }
