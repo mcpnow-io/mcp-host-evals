@@ -20,9 +20,8 @@ import {
   ServerCapabilities,
   SetLevelRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { logger } from "@/utils/logger.js";
 import { name, version } from "../package.json";
-import { ACTIVE_FEATURES, ActiveFeature, FeatureTracker } from "./core/feature-tracker.js";
+import { ACTIVE_FEATURES, ActiveFeature, FeatureTracker } from "./feature-tracker.js";
 import { v4 } from "uuid";
 
 enum TOOLS {
@@ -33,11 +32,13 @@ enum TOOLS {
   get_result = "get_result",
 }
 
+const TEST_RESOURCE_URI = "file://test-resource/test-resource.txt";
+
 const USER_HANDLER_PROMPT = "This test does not require calling any tools, it needs to wait for user operations, and when the user answers 'continue', it will continue to evaluate."
 
 
 const INITIAL_TASKS = [
-  // ====don‘t remove this annotation====
+  // // ====don‘t remove this annotation====
   {
     title: "Resource Management Test",
     description:
@@ -46,7 +47,20 @@ const INITIAL_TASKS = [
     instructions: [
       USER_HANDLER_PROMPT,
       "You must ask the user to select and send a resource from the current host. Before user send new message, you shouldn't do anything.",
-      "The required resource URI is: test://test-resource/test-resource.txt.",
+      `The required resource URI is: ${TEST_RESOURCE_URI}.`,
+    ],
+  },
+  {
+    title: "Resource Subscribe Test",
+    description:
+      "Test whether the client can correctly subscribe to resources from the MCP server",
+    protocol: "resources/subscribe, resources/unsubscribe",
+    instructions: [
+      USER_HANDLER_PROMPT,
+      `You must ask the user to subscribe to the resource uri:'${TEST_RESOURCE_URI}' from the current host. `,
+      "And Then When user input 'continue', you should call the tool '${TOOLS.trigger_event}' with event_type 'notifications/resources/updated' to trigger the subscription event. ",
+      `And Then ask user to unsubscribe to the resource uri:'${TEST_RESOURCE_URI}' from the current host. `,
+      "And Then When user input 'continue', continue to the next step.",
     ],
   },
   {
@@ -124,7 +138,7 @@ const INITIAL_TASKS = [
     instructions: [
       `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/progress' event. This will test whether the client can properly receive and display progress updates from the server.`,
       "You Must ask user to input the progress message content (a float number, e.g. '0.52134213222121') to continue. if user input 'continue', you should skip this step. ",
-      `If user input the progress message content, you should call the tool '${TOOLS.callback}' with event_name 'notifications/progress' to confirm that you have successfully received and processed the notification.`,
+      `If user input the progress message content, you should call the tool '${TOOLS.callback}' with event_name 'notifications/progress' and message content to confirm that you have successfully received and processed the notification.`,
     ],
   },
   {
@@ -135,7 +149,7 @@ const INITIAL_TASKS = [
     instructions: [
       `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/message' event. This will test whether the client can properly receive and process server-sent messages, including different log levels (info, warning, error) and message content.`,
       `You Must ask user to input the message content (a string, e.g. ${v4()}) to continue. if user input 'continue', you should skip this step. `,
-      `If user input the message, you should call the tool '${TOOLS.callback}' with event_name 'notifications/message' to confirm that you have successfully received and processed the notification.`,
+      `If user input the message, you Must call the tool '${TOOLS.callback}' with event_name 'notifications/message' with message content to confirm that you have successfully received and processed the notification.`,
     ],
   },
   {
@@ -196,13 +210,7 @@ export class McpHostTestServer {
     instructions: string[];
     protocol?: string;
   }> = [];
-  private pendingEvents: Map<string, {
-    eventType: string;
-    expectedCallback: string;
-    timestamp: number;
-    data?: any;
-    timer?: NodeJS.Timeout;
-  }> = new Map();
+
   private logMessage: string = "";
   private progressMessage: string = "";
   private logLevel: string = "info";
@@ -227,6 +235,7 @@ export class McpHostTestServer {
           },
           resources: {
             listChanged: true,
+            subscribe: true,
           },
           prompts: {
             listChanged: true,
@@ -262,7 +271,7 @@ export class McpHostTestServer {
       return {
         resources: [
           {
-            uri: "test://test-resource/test-resource.txt",
+            uri: TEST_RESOURCE_URI,
             name: "Test Resource",
             type: "text/plain",
           },
@@ -276,9 +285,10 @@ export class McpHostTestServer {
         return {
           content: [
             {
-              type: "text",
-              uri: "test://test-resource/test-resource.txt",
-              text: "Test resource content",
+              mimeType: "text/plain",
+              uri: TEST_RESOURCE_URI,
+              title: "Test Resource",
+              text: "This is a test resource content. if you can see this message, it means the resource has been read successfully.",
             },
           ],
         };
@@ -428,7 +438,7 @@ export class McpHostTestServer {
     if (action === "reset") {
       this.currentTaskIndex = 0;
       this.tracker.reset();
-      this.pendingEvents.clear();
+      this.tracker.pendingEvents.clear();
       this.logLevel = "info";
       this.logMessage = "";
       this.progressMessage = "";
@@ -609,31 +619,10 @@ export class McpHostTestServer {
     throw new Error(`Unsupported event type: ${event_type}`)
   }
 
-  private async _triggerEnsureCallbackEvent(event_type: ActiveFeature, data?: any) {
-    const eventCallbackMap: Record<string, string> = {
-      "notifications/resources/list_changed": "resources/list",
-      "notifications/prompts/list_changed": "prompts/list",
-      "notifications/tools/list_changed": "tools/list",
-    };
-
-    if (eventCallbackMap[event_type]) {
-      const timer = setTimeout(() => {
-        this.pendingEvents.delete(event_type);
-      }, 10000)
-      this.pendingEvents.set(event_type, {
-        eventType: event_type,
-        expectedCallback: eventCallbackMap[event_type],
-        timestamp: Date.now(),
-        data,
-        timer,
-      });
-
-
-
-    }
-
+  private async _triggerEnsureCallbackEvent(event_type: ActiveFeature) {
+    this.tracker.recordPendingEvent(event_type);
     try {
-      await this.sendNotificationByType(event_type, data);
+      await this.sendNotificationByType(event_type);
       return this._replyTriggerEvent('success', event_type)
     } catch (error) {
       return this._replyTriggerEvent('error', event_type)
@@ -649,7 +638,7 @@ export class McpHostTestServer {
       return this._triggerManualEvent(event_type)
     }
 
-    if (["notifications/resources/list_changed", "notifications/prompts/list_changed", "notifications/tools/list_changed"].includes(event_type)) {
+    if (Object.keys(this.tracker.eventCallbackMap).includes(event_type)) {
       return this._triggerEnsureCallbackEvent(event_type)
     }
 
@@ -697,37 +686,35 @@ export class McpHostTestServer {
       } else {
         console.log("message not match", message, this.progressMessage);
       }
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Callback received: ${event_name}, message: ${message}`
+          },
+        ],
+      }
     }
 
     throw new Error(`Unsupported callback event name: ${event_name}`)
   }
 
-  private async sendNotificationByType(eventType: string, data?: any) {
+  private async sendNotificationByType(eventType: string) {
     switch (eventType) {
-      case "notifications/roots/list_changed":
-        await this.server.server.notification({
-          method: "notifications/roots/list_changed",
-          params: data || {},
-        });
-        break;
       case "notifications/resources/list_changed":
-        await this.server.server.notification({
-          method: "notifications/resources/list_changed",
-          params: data || {},
-        });
-        break;
-
       case "notifications/prompts/list_changed":
-        await this.server.server.notification({
-          method: "notifications/prompts/list_changed",
-          params: data || {},
-        });
-        break;
-
       case "notifications/tools/list_changed":
         await this.server.server.notification({
-          method: "notifications/tools/list_changed",
-          params: data || {},
+          method: eventType,
+        });
+        break;
+      case "notifications/resources/updated":
+        await this.server.server.notification({
+          method: eventType,
+          params: {
+            uri: TEST_RESOURCE_URI,
+            title: "Test Resource",
+          }
         });
         break;
 
@@ -740,13 +727,12 @@ export class McpHostTestServer {
           },
         });
         break;
-
       case "notifications/message":
         this.logMessage = v4();
         await this.server.server.notification({
           method: "notifications/message",
           params: {
-            level: data?.level || "info",
+            level: "info",
             logger: "mcp-host-evals",
             data: {
               message: this.logMessage,
@@ -761,47 +747,18 @@ export class McpHostTestServer {
   }
 
   private checkAndClearPendingEvent(method: string) {
-    let eventCleared = false;
-    for (const [eventId, pendingEvent] of this.pendingEvents.entries()) {
-      if (pendingEvent.expectedCallback === method) {
-        clearTimeout(pendingEvent.timer);
-        this.pendingEvents.delete(eventId);
-        logger.info(
-          `✅ Pending event cleared: ${pendingEvent.eventType} -> ${method} executed`
-        );
-
-        this.markNotificationFeatureAsCompleted(pendingEvent.eventType);
-        eventCleared = true;
-      }
+    const eventData = this.tracker.getPendingEventByMethod(method);
+    if (eventData) {
+      const { eventId, pendingEvent } = eventData;
+      this.tracker.clearPendingEvent(eventId);
+      this.markNotificationFeatureAsCompleted(pendingEvent.eventType);
+      return true;
     }
-    return eventCleared;
+    return false;
   }
 
   private markNotificationFeatureAsCompleted(eventType: string) {
-    let featureName: string;
-
-    switch (eventType) {
-      case "notifications/resources/list_changed":
-        featureName = "notifications/resources/list_changed";
-        break;
-      case "notifications/prompts/list_changed":
-        featureName = "notifications/prompts/list_changed";
-        break;
-      case "notifications/tools/list_changed":
-        featureName = "notifications/tools/list_changed";
-        break;
-      case "notifications/progress":
-        featureName = "notifications/progress";
-        break;
-      case "notifications/message":
-        featureName = "notifications/message";
-        break;
-      default:
-        console.warn(`Unknown event type for feature tracking: ${eventType}`);
-        return;
-    }
-
-    this.tracker.recordFeatureCall(featureName as any, true);
+    this.tracker.recordFeatureCall(eventType as any, true);
   }
 
   private setupPromptHandlers() {
@@ -897,7 +854,7 @@ export class McpHostTestServer {
   ): Promise<CompleteResult> {
     return {
       completion: {
-        values: ["test completion value"],
+        values: ["example prompt completion value"],
       },
     }
   }
@@ -908,7 +865,7 @@ export class McpHostTestServer {
   ): Promise<CompleteResult> {
     return {
       completion: {
-        values: ["test completion value"],
+        values: ["example resource completion value"],
       },
     }
   }
@@ -926,12 +883,10 @@ export class McpHostTestServer {
     await this.server.connect(transport);
   }
 
-  async stop(): Promise<void> {
-    logger.info("🛑 Stopping MCP test server...");
-
-    // Stop periodic notifications
+  async close(): Promise<void> {
     if (this.testIntervalId) {
       clearInterval(this.testIntervalId);
     }
+    this.server.close();
   }
 }

@@ -2,8 +2,7 @@
 
 import express from "express";
 
-import { McpHostTestServer } from "./mcp-test-utils-server.js";
-import { logger } from "./utils/logger.js";
+import { McpHostTestServer } from "./mcp-host-evals-server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
@@ -82,11 +81,11 @@ class HttpMcpServer {
     try {
       // 启动HTTP服务器
       this.httpServer.listen(PORT, HOST, () => {
-        logger.info(`MCP endpoint: http://${HOST}:${PORT}/mcp`);
-        logger.info(`Health check: http://${HOST}:${PORT}/health`);
+        console.info(`MCP endpoint: http://${HOST}:${PORT}/mcp`);
+        console.info(`Health check: http://${HOST}:${PORT}/health`);
       });
     } catch (error) {
-      logger.error("Start server failed:", error);
+      console.error("Start server failed:", error);
       throw error;
     }
   }
@@ -98,14 +97,14 @@ async function main() {
   try {
     await server.start();
   } catch (error) {
-    logger.error("Start server failed:", error);
+    console.error("Start server failed:", error);
     process.exit(1);
   }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((error) => {
-    logger.error("Main function execution error:", error);
+    console.error("Main function execution error:", error);
     process.exit(1);
   });
 }

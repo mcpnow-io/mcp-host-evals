@@ -14,8 +14,8 @@ export const PASSIVE_FEATURES = [
   "resources/templates/list",
 
   // TODO: unimplemented. resources subscribe, unimplemented.
-  // "resources/subscribe",
-  // "resources/unsubscribe",
+  "resources/subscribe",
+  "resources/unsubscribe",
 
   "prompts/list",
   "prompts/get",
@@ -32,10 +32,10 @@ export const ACTIVE_FEATURES = [
 
   // active features with standard callback event
   "notifications/resources/list_changed",
-  // "notifications/resources/updated", // TODO: unimplemented.
+  "notifications/resources/updated",
   "notifications/tools/list_changed",
   "notifications/prompts/list_changed",
-  // "notifications/roots/list_changed", // cant implement, only trigger by client, not server.
+  // "notifications/roots/list_changed", // can't implement, only trigger by client, server cant trigger it.
 
   // active features without callback
   "roots/list",
@@ -55,7 +55,20 @@ export const ACTIVE_FEATURES = [
 ] as const;
 export type ActiveFeature = (typeof ACTIVE_FEATURES)[number];
 
-export class FeatureTracker extends EventEmitter {
+export class FeatureTracker {
+  public _eventCallbackMap: Record<string, string> = {
+    "notifications/resources/list_changed": "resources/list",
+    "notifications/prompts/list_changed": "prompts/list",
+    "notifications/tools/list_changed": "tools/list",
+    "notifications/resources/updated": "resources/read",
+  };
+  private _pendingEvents: Map<string, {
+    eventType: string;
+    expectedCallback: string;
+    timestamp: number;
+    data?: any;
+    timer?: NodeJS.Timeout;
+  }> = new Map();
   // 记录所有功能的状态
   private _featuresStatus: Record<
     ActiveFeature | PassiveFeature,
@@ -83,10 +96,6 @@ export class FeatureTracker extends EventEmitter {
       ),
     };
 
-  constructor() {
-    super();
-  }
-
   recordFeatureCall(feature: ActiveFeature | PassiveFeature, success: boolean) {
     if (!this._featuresStatus[feature] || this._featuresStatus[feature].isPassed) {
       return;
@@ -95,13 +104,61 @@ export class FeatureTracker extends EventEmitter {
     this._featuresStatus[feature].isPassed = success;
   }
 
+  recordPendingEvent(event_type: string, data?: any) {
+    if (this.eventCallbackMap[event_type]) {
+      const timer = setTimeout(() => {
+        this.pendingEvents.delete(event_type);
+      }, 5000)
+      this.pendingEvents.set(event_type, {
+        eventType: event_type,
+        expectedCallback: this.eventCallbackMap[event_type],
+        timestamp: Date.now(),
+        data,
+        timer,
+      });
+    }
+  }
+
+  getPendingEvent(event_type: string) {
+    return this._pendingEvents.get(event_type);
+  }
+
+  getPendingEventByMethod(method: string) {
+    for (const [eventId, pendingEvent] of this._pendingEvents.entries()) {
+      if (pendingEvent.expectedCallback === method) {
+        return { eventId, pendingEvent };
+      }
+    }
+    return null;
+  }
+
+  clearPendingEvent(eventId: string) {
+    const pendingEvent = this._pendingEvents.get(eventId);
+    if (pendingEvent) {
+      if (pendingEvent.timer) {
+        clearTimeout(pendingEvent.timer);
+      }
+      this._pendingEvents.delete(eventId);
+      return pendingEvent;
+    }
+    return null;
+  }
+
   get featuresStatus() {
     return this._featuresStatus;
   }
 
+  get eventCallbackMap() {
+    return this._eventCallbackMap;
+  }
+
+  get pendingEvents() {
+    return this._pendingEvents;
+  }
+
   reset() {
     // 重置除初始化外的所有功能状态
-    Object.values(omit(this._featuresStatus, ['notifications/initialized', 'initialize', 'ping', 'pong'])).forEach((feature) => {
+    Object.values(omit(this._featuresStatus, ['notifications/initialized', 'initialize'])).forEach((feature) => {
       feature.isPassed = false;
     });
   }
