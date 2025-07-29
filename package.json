@@ -16,7 +16,10 @@
     "build": "pnpm clean && vite build",
     "dev:cli": "pnpm clean && vite build --watch",
     "dev:server": "nodemon ./bin/mcp-host-evals.js http",
-    "dev:stdio": "nodemon ./bin/mcp-host-evals.js"
+    "dev:stdio": "nodemon ./bin/mcp-host-evals.js",
+    "major": "pnpm version major",
+    "minor": "pnpm version minor",
+    "patch": "pnpm version patch"
   },
   "keywords": [],
   "author": "",
