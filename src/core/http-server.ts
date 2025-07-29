@@ -2,19 +2,24 @@
 
 import express from "express";
 
-import { McpHostTestServer } from "./mcp-host-evals-server.js";
+import { McpHostProtocolEvalsServer } from "./host-evals-server.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { randomUUID } from "node:crypto";
+import { Logger } from "@/logger/logger.js";
+import { container } from "tsyringe";
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
-const HOST = process.env.HOST || "localhost";
+interface HttpMcpServerOptions {
+  port: number;
+  host: string;
+}
 
 class HttpMcpServer {
-  private httpServer: express.Express;
+  private httpServer: express.Application;
   private transports = {} as Record<string, StreamableHTTPServerTransport>;
+  private logger: Logger = container.resolve(Logger);
 
-  constructor() {
+  constructor(private options: HttpMcpServerOptions) {
     this.httpServer = express();
     this.httpServer.use(express.json());
     this.initializeRoutes();
@@ -43,7 +48,7 @@ class HttpMcpServer {
           }
         };
 
-        const testServer = new McpHostTestServer();
+        const testServer = new McpHostProtocolEvalsServer();
         await testServer.connect(transport);
       } else {
         // Invalid request
@@ -79,34 +84,21 @@ class HttpMcpServer {
 
   async start() {
     try {
-      // 启动HTTP服务器
-      this.httpServer.listen(PORT, HOST, () => {
-        console.info(`MCP endpoint: http://${HOST}:${PORT}/mcp`);
-        console.info(`Health check: http://${HOST}:${PORT}/health`);
+      this.httpServer.listen(this.options.port, this.options.host, (error) => {
+        if ((error as any)?.code === "EADDRINUSE") {
+          this.logger.warn("Start server failed, port is already in use, try next port");
+          this.options.port++;
+          this.start();
+        } else {
+          this.logger.info(`MCP endpoint: http://${this.options.host}:${this.options.port}/mcp`);
+          this.logger.info(`Health check: http://${this.options.host}:${this.options.port}/health`);
+        }
       });
     } catch (error) {
-      console.error("Start server failed:", error);
+      this.logger.error("Start server failed:", error);
       throw error;
     }
   }
-}
-
-async function main() {
-  const server = new HttpMcpServer();
-
-  try {
-    await server.start();
-  } catch (error) {
-    console.error("Start server failed:", error);
-    process.exit(1);
-  }
-}
-
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((error) => {
-    console.error("Main function execution error:", error);
-    process.exit(1);
-  });
 }
 
 export { HttpMcpServer };

@@ -2,8 +2,21 @@
   "name": "mcp-host-evals",
   "version": "0.0.0",
   "type": "module",
+  "bin": {
+    "mcp-host-evals": "bin/mcp-host-evals.js"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "package.json"
+  ],
+  "homepage": "https://github.com/mcpnow-io/mcp-host-evals",
   "scripts": {
-    "dev:server": "tsx watch src/http-server.ts"
+    "clean": "rm -rf dist && rm -rf logs",
+    "build": "pnpm clean && vite build",
+    "dev:cli": "pnpm clean && vite build --watch",
+    "dev:server": "nodemon ./bin/mcp-host-evals.js http",
+    "dev:stdio": "nodemon ./bin/mcp-host-evals.js"
   },
   "keywords": [],
   "author": "",
@@ -11,11 +24,16 @@
   "description": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.16.0",
+    "cac": "^6.7.14",
     "express": "^5.1.0",
     "lodash-es": "^4.17.21",
-    "uuid": "^11.1.0"
+    "reflect-metadata": "^0.2.2",
+    "tsyringe": "^4.10.0",
+    "uuid": "^11.1.0",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.3",
     "@types/lodash-es": "^4.17.12",
     "@types/node": "^24.0.8",
     "@types/pino": "^7.0.5",

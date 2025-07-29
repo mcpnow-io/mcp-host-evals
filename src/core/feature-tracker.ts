@@ -1,5 +1,6 @@
-import { EventEmitter } from "events";
+import { Logger } from "@/logger/logger";
 import { omit } from "lodash-es";
+import { container } from "tsyringe";
 
 export const PASSIVE_FEATURES = [
   "initialize",
@@ -56,6 +57,7 @@ export const ACTIVE_FEATURES = [
 export type ActiveFeature = (typeof ACTIVE_FEATURES)[number];
 
 export class FeatureTracker {
+  private logger: Logger = container.resolve(Logger);
   public _eventCallbackMap: Record<string, string> = {
     "notifications/resources/list_changed": "resources/list",
     "notifications/prompts/list_changed": "prompts/list",
@@ -100,13 +102,14 @@ export class FeatureTracker {
     if (!this._featuresStatus[feature] || this._featuresStatus[feature].isPassed) {
       return;
     }
-    console.log("recordFeatureCall", feature, success);
+    this.logger.info(`feature「${feature}」 will be record to ${success}`);
     this._featuresStatus[feature].isPassed = success;
   }
 
   recordPendingEvent(event_type: string, data?: any) {
     if (this.eventCallbackMap[event_type]) {
       const timer = setTimeout(() => {
+        this.logger.info(`pending event_type: ${event_type} will be deleted`);
         this.pendingEvents.delete(event_type);
       }, 5000)
       this.pendingEvents.set(event_type, {
@@ -158,7 +161,7 @@ export class FeatureTracker {
 
   reset() {
     // 重置除初始化外的所有功能状态
-    Object.values(omit(this._featuresStatus, ['notifications/initialized', 'initialize'])).forEach((feature) => {
+    Object.values(omit(this._featuresStatus, ['notifications/initialized', 'initialize', 'tools/list', 'tools/call'])).forEach((feature) => {
       feature.isPassed = false;
     });
   }

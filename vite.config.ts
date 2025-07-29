@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import dts from "vite-plugin-dts";
 
-import { dependencies } from "./package.json";
+import { dependencies, devDependencies, name } from "./package.json";
 
 const nodeBuiltins = [
   "assert",
@@ -49,7 +49,7 @@ export default defineConfig({
   build: {
     lib: {
       entry: {
-        "mcp-host-test": resolve(__dirname, "./src/index.ts"),
+        [name]: resolve(__dirname, `./src/cli/${name}.ts`),
       },
       formats: ["es"],
       fileName: (format, entryName) => `${entryName}.js`,
@@ -61,6 +61,7 @@ export default defineConfig({
     rollupOptions: {
       external: [
         ...Object.keys(dependencies),
+        ...Object.keys(devDependencies),
         ...nodeBuiltins,
         ...nodeBuiltins.map((mod) => `node:${mod}`),
         /^node:/,

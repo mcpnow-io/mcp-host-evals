@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   CompleteRequest,
@@ -16,13 +15,15 @@ import {
   PromptReference,
   ReadResourceRequestSchema,
   ResourceTemplateReference,
-  SamplingMessageSchema,
   ServerCapabilities,
   SetLevelRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { name, version } from "../package.json";
+import { name, version } from "../../package.json";
 import { ACTIVE_FEATURES, ActiveFeature, FeatureTracker } from "./feature-tracker.js";
 import { v4 } from "uuid";
+import { Transport } from "@modelcontextprotocol/sdk/shared/transport";
+import { Logger } from "@/logger/logger";
+import { container } from "tsyringe";
 
 enum TOOLS {
   mcp_test_guide = "mcp_test_guide",
@@ -199,7 +200,7 @@ const replyTextMessage = (message: string) => {
 
 
 
-export class McpHostTestServer {
+export class McpHostProtocolEvalsServer {
   public server: McpServer;
   private tracker: FeatureTracker;
   private currentTaskIndex = 0;
@@ -214,6 +215,7 @@ export class McpHostTestServer {
   private logMessage: string = "";
   private progressMessage: string = "";
   private logLevel: string = "info";
+  private logger: Logger = container.resolve(Logger);
 
   constructor() {
     this.tracker = new FeatureTracker();
@@ -317,15 +319,15 @@ export class McpHostTestServer {
               properties: {
                 step: {
                   type: "number",
-                  description: "Test step number to execute, starting from 1",
+                  description: "Test step number to execute, starting from 1, it means the first step",
                   minimum: 1,
                 },
                 action: {
                   type: "string",
                   description:
-                    "Operation type: next (next step), current (current step), reset (reset)",
-                  enum: ["next", "current", "reset"],
-                  default: "current",
+                    "Operation type: next (next step), reset (reset)",
+                  enum: ["next", "reset"],
+                  default: "next",
                 },
               },
             },
@@ -401,7 +403,7 @@ export class McpHostTestServer {
             return this.handleTestGuide(
               args as {
                 step: number;
-                action: "next" | "current" | "reset";
+                action: "next" | "reset";
               }
             );
           case TOOLS.test_tool_call:
@@ -430,48 +432,40 @@ export class McpHostTestServer {
 
   private async handleTestGuide(args: {
     step: number;
-    action: "next" | "current" | "reset";
+    action: "next" | "reset";
   }) {
     const action = args?.action || "current";
     const requestedStep = args?.step;
 
     if (action === "reset") {
-      this.currentTaskIndex = 0;
       this.tracker.reset();
       this.tracker.pendingEvents.clear();
       this.logLevel = "info";
       this.logMessage = "";
       this.progressMessage = "";
-      return replyTextMessage("Test progress has been reset, will start from the first task. Please call this tool again to start testing.")
+      return replyTextMessage("Test progress has been reset, will start from the first task. Please call this tool again to start testing. step is 1.")
     }
 
-    if (action === "next" && requestedStep) {
-      this.currentTaskIndex = Math.min(
-        requestedStep - 1,
-        this.testTasks.length - 1
-      );
+    if (requestedStep > this.testTasks.length) {
+      return replyTextMessage(`🎉 Congratulations! All assessment tasks have been completed! Please call the tool ${TOOLS.get_result} to get the test result.`)
     }
 
-    if (this.currentTaskIndex >= this.testTasks.length) {
-      return replyTextMessage("🎉 Congratulations! All assessment tasks have been completed! Please call the tool 'get_result' to get the test result.")
-    }
-
-    const currentTask = this.testTasks[this.currentTaskIndex];
-    const progressText = `${this.currentTaskIndex + 1}/${this.testTasks.length}`;
+    const currentTask = this.testTasks[requestedStep - 1];
+    const progressText = `${requestedStep}/${this.testTasks.length}`;
 
     const response = {
       content: [
         {
           type: "text",
           text:
-            `**Task ID**: ${this.currentTaskIndex + 1}\n` +
+            `**Task ID**: ${requestedStep}\n` +
             `**MCP Protocol Assessment Task ${progressText}**\n\n` +
             `**Task Title**: ${currentTask.title}\n` +
             `**Test Protocol**: ${currentTask.protocol}\n` +
             `**Task Description**: ${currentTask.description}\n\n` +
             `**Task Instructions**: ${currentTask.instructions.join("\n")}\n\n` +
-            (this.currentTaskIndex < this.testTasks.length - 1
-              ? "🔄 **Continue**: Please complete the current test and continue to the next task"
+            (requestedStep < this.testTasks.length
+              ? `🔄 **Continue**: Please complete the current test and continue to the next task, next step is ${requestedStep + 1}`
               : "🏁 **Almost Done**: This is the last test task"),
         },
       ],
@@ -668,7 +662,7 @@ export class McpHostTestServer {
       if (message === this.logMessage) {
         this.markNotificationFeatureAsCompleted(event_name);
       } else {
-        console.log("message not match", message, this.logMessage);
+        this.logger.info(`message not match, expected: ${this.logMessage}, actual: ${message}`);
       }
       return {
         content: [
@@ -684,7 +678,7 @@ export class McpHostTestServer {
       if (message === this.progressMessage) {
         this.markNotificationFeatureAsCompleted(event_name);
       } else {
-        console.log("message not match", message, this.progressMessage);
+        this.logger.info(`message not match, expected: ${this.progressMessage}, actual: ${message}`);
       }
       return {
         content: [
@@ -870,7 +864,7 @@ export class McpHostTestServer {
     }
   }
 
-  async connect(transport: StreamableHTTPServerTransport): Promise<void> {
+  async connect(transport: Transport): Promise<void> {
     const rawOnMessage = transport.onmessage?.bind(transport);
     transport.onmessage = (message) => {
       rawOnMessage?.(message);
