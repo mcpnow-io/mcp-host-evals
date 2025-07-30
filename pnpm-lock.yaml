@@ -20,6 +20,9 @@ importers:
       lodash-es:
         specifier: ^4.17.21
         version: 4.17.21
+      mcp-host-evals:
+        specifier: 'link:'
+        version: 'link:'
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2

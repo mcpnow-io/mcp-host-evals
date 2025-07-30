@@ -8,7 +8,8 @@
   "files": [
     "dist",
     "bin",
-    "package.json"
+    "package.json",
+    ".images"
   ],
   "homepage": "https://github.com/mcpnow-io/mcp-host-evals",
   "scripts": {
@@ -30,6 +31,7 @@
     "cac": "^6.7.14",
     "express": "^5.1.0",
     "lodash-es": "^4.17.21",
+    "mcp-host-evals": "link:",
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.10.0",
     "uuid": "^11.1.0",
