@@ -39,7 +39,67 @@ const USER_HANDLER_PROMPT = "This test does not require calling any tools, it ne
 
 
 const INITIAL_TASKS = [
-  // // ====don‘t remove this annotation====
+  {
+    title: "Root Directory List Test",
+    description:
+      "Test whether the MCP server can correctly retrieve the root directory list of the client roots",
+    protocol: "roots/list",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'roots/list' event. This will test the client's ability to handle root directory list notifications and subsequently call the roots/list endpoint.`,
+    ],
+    isManual: false,
+  },
+  {
+    title: "Resource List Changed Notification Test",
+    description:
+      "Test the client's ability to receive and respond to resource list change notifications",
+    protocol: "notifications/resources/list_changed",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/resources/list_changed' event. This will test whether the client properly receives the notification and responds by calling the resources/list endpoint to refresh its resource cache.`,
+    ],
+    isManual: false,
+  },
+  {
+    title: "Prompt List Changed Notification Test",
+    description:
+      "Test the client's ability to receive and respond to prompt list change notifications",
+    protocol: "notifications/prompts/list_changed",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/prompts/list_changed' event. This will test whether the client properly receives the notification and responds by calling the prompts/list endpoint to refresh its prompt cache.`,
+    ],
+    isManual: false,
+  },
+  {
+    title: "Tools List Changed Notification Test",
+    description:
+      "Test the client's ability to receive and respond to tools list change notifications",
+    protocol: "notifications/tools/list_changed",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/tools/list_changed' event. This will test whether the client properly receives the notification and responds by calling the tools/list endpoint to refresh its tool cache.`,
+    ],
+    isManual: false,
+  },
+  {
+    title: "Ping Test",
+    description:
+      "Test the client's ability to ping the Mcp Server",
+    protocol: "ping",
+    instructions: [
+      `Use the ${TOOLS.trigger_event} tool to fire the 'ping' event. `,
+    ],
+    isManual: false,
+  },
+  {
+    title: "Logging Set Level Test",
+    description:
+      "Test the client's ability to set the logging level of the Mcp Server",
+    protocol: "logging/setLevel",
+    instructions: [
+      USER_HANDLER_PROMPT,
+      `You must ask user to change the logging level (e.g. 'info', 'warning', 'error'), if user input 'continue', you should skip this step. `,
+    ],
+    isManual: true,
+  },
   {
     title: "Resource Management Test",
     description:
@@ -50,6 +110,7 @@ const INITIAL_TASKS = [
       "You must ask the user to select and send a resource from the current host. Before user send new message, you shouldn't do anything.",
       `The required resource URI is: ${TEST_RESOURCE_URI}.`,
     ],
+    isManual: true,
   },
   {
     title: "Resource Subscribe Test",
@@ -63,6 +124,7 @@ const INITIAL_TASKS = [
       `And Then ask user to unsubscribe to the resource uri:'${TEST_RESOURCE_URI}' from the current host. `,
       "And Then When user input 'continue', continue to the next step.",
     ],
+    isManual: true,
   },
   {
     title: "Prompt Management Test",
@@ -73,6 +135,7 @@ const INITIAL_TASKS = [
       USER_HANDLER_PROMPT,
       "You must ask the user to send a prompt named 'test_prompt' to the server. ",
     ],
+    isManual: true,
   },
   {
     title: "Completion Management Test",
@@ -84,52 +147,7 @@ const INITIAL_TASKS = [
       "You must ask the user to send prompt named 'test_completion' to the server.",
       "test_completion is a prompt that will trigger a completion from the server, if host is support completion",
     ],
-  },
-  {
-    title: "Root Directory List Test",
-    description:
-      "Test whether the MCP server can correctly retrieve the root directory list of the client roots",
-    protocol: "roots/list",
-    instructions: [
-      `Use the ${TOOLS.trigger_event} tool to fire the 'roots/list' event. This will test the client's ability to handle root directory list notifications and subsequently call the roots/list endpoint.`,
-    ],
-  },
-  {
-    title: "Logging Set Level Test",
-    description:
-      "Test the client's ability to set the logging level of the Mcp Server",
-    protocol: "logging/setLevel",
-    instructions: [
-      USER_HANDLER_PROMPT,
-      `You must ask user to change the logging level (e.g. 'info', 'warning', 'error'), if user input 'continue', you should skip this step. `,
-    ],
-  },
-  {
-    title: "Resource List Changed Notification Test",
-    description:
-      "Test the client's ability to receive and respond to resource list change notifications",
-    protocol: "notifications/resources/list_changed",
-    instructions: [
-      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/resources/list_changed' event. This will test whether the client properly receives the notification and responds by calling the resources/list endpoint to refresh its resource cache.`,
-    ],
-  },
-  {
-    title: "Prompt List Changed Notification Test",
-    description:
-      "Test the client's ability to receive and respond to prompt list change notifications",
-    protocol: "notifications/prompts/list_changed",
-    instructions: [
-      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/prompts/list_changed' event. This will test whether the client properly receives the notification and responds by calling the prompts/list endpoint to refresh its prompt cache.`,
-    ],
-  },
-  {
-    title: "Tools List Changed Notification Test",
-    description:
-      "Test the client's ability to receive and respond to tools list change notifications",
-    protocol: "notifications/tools/list_changed",
-    instructions: [
-      `Use the ${TOOLS.trigger_event} tool to fire the 'notifications/tools/list_changed' event. This will test whether the client properly receives the notification and responds by calling the tools/list endpoint to refresh its tool cache.`,
-    ],
+    isManual: true,
   },
   {
     title: "Progress Notification Test",
@@ -141,6 +159,7 @@ const INITIAL_TASKS = [
       "You Must ask user to input the progress message content (a float number, e.g. '0.52134213222121') to continue. if user input 'continue', you should skip this step. ",
       `If user input the progress message content, you should call the tool '${TOOLS.callback}' with event_name 'notifications/progress' and message content to confirm that you have successfully received and processed the notification.`,
     ],
+    isManual: true,
   },
   {
     title: "Message Notification Test",
@@ -152,6 +171,7 @@ const INITIAL_TASKS = [
       `You Must ask user to input the message content (a string, e.g. ${v4()}) to continue. if user input 'continue', you should skip this step. `,
       `If user input the message, you Must call the tool '${TOOLS.callback}' with event_name 'notifications/message' with message content to confirm that you have successfully received and processed the notification.`,
     ],
+    isManual: true,
   },
   {
     title: "Sampling Create Message Test",
@@ -163,6 +183,7 @@ const INITIAL_TASKS = [
       "Tell User if client has alert some message, must access the request of host application.",
       "If nothing alert, user should input 'continue' to skip this step."
     ],
+    isManual: true,
   },
   {
     title: "Elicitation Create Test",
@@ -174,18 +195,9 @@ const INITIAL_TASKS = [
       "Tell User if client has alert some message, must access the request of host application.",
       "If nothing alert, user should input 'continue' to skip this step.",
     ],
+    isManual: true,
   },
-  {
-    title: "Ping Test",
-    description:
-      "Test the client's ability to ping the Mcp Server",
-    protocol: "ping",
-    instructions: [
-      `Use the ${TOOLS.trigger_event} tool to fire the 'ping' event. `,
-    ],
-  }
-
-];
+].sort((a, b) => a.isManual ? 1 : b.isManual ? -1 : 0);
 
 const replyTextMessage = (message: string) => {
   return {
@@ -203,13 +215,13 @@ const replyTextMessage = (message: string) => {
 export class McpHostProtocolEvalsServer {
   public server: McpServer;
   private tracker: FeatureTracker;
-  private currentTaskIndex = 0;
   private testIntervalId?: NodeJS.Timeout;
   private testTasks: Array<{
     title: string;
     description: string;
     instructions: string[];
     protocol?: string;
+    isManual?: boolean;
   }> = [];
 
   private logMessage: string = "";
@@ -447,7 +459,7 @@ export class McpHostProtocolEvalsServer {
     }
 
     if (requestedStep > this.testTasks.length) {
-      return replyTextMessage(`🎉 Congratulations! All assessment tasks have been completed! Please call the tool ${TOOLS.get_result} to get the test result.`)
+      return replyTextMessage(`🎉 Congratulations! All assessment tasks have been completed! Please call the tool ${TOOLS.get_result} to get the test result. ensure ask user everything about the test result.`)
     }
 
     const currentTask = this.testTasks[requestedStep - 1];
@@ -488,31 +500,24 @@ export class McpHostProtocolEvalsServer {
       }
     });
 
+    const manualTasks = this.testTasks.filter(task => task.isManual);
+
     let report = `📊 **MCP Feature Test Results**\n\n`;
 
     const totalFeatures = passedFeatures.length + failedFeatures.length;
     const passRate = totalFeatures > 0 ? Math.round((passedFeatures.length / totalFeatures) * 100) : 0;
+
+    if (manualTasks.length > 0) {
+      report += `🚨 **⚠️ Test Result Reliability Warning ⚠️**\n\n`;
+      report += `This test contains ${manualTasks.length} manual test cases. **The accuracy of test results may be affected by user operations**.\n`;
+      report += `Please carefully read the manual test case descriptions below to understand factors that may affect test accuracy.\n\n`;
+    }
 
     report += `**Summary:**\n`;
     report += `• Total Features: ${totalFeatures}\n`;
     report += `• ✅ Passed: ${passedFeatures.length}\n`;
     report += `• ❌ Failed: ${failedFeatures.length}\n`;
     report += `• 📈 Pass Rate: ${passRate}%\n\n`;
-
-    if (passedFeatures.length > 0) {
-      report += `## ✅ **Passed Features (${passedFeatures.length})**\n\n`;
-      passedFeatures.forEach(feature => {
-        report += `- ${feature}\n`;
-      });
-    }
-    if (failedFeatures.length > 0) {
-      report += `## ❌ **Failed Features (${failedFeatures.length})**\n\n`;
-      failedFeatures.forEach(feature => {
-        report += `- ${feature}\n`;
-      });
-    } else {
-      report += `🎉 **Congratulations!** All features have passed!\n`;
-    }
 
     return {
       content: [
