@@ -8,8 +8,7 @@
   "files": [
     "dist",
     "bin",
-    "package.json",
-    ".images"
+    "package.json"
   ],
   "homepage": "https://github.com/mcpnow-io/mcp-host-evals",
   "scripts": {
