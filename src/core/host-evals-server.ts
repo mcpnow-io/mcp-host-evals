@@ -518,6 +518,10 @@ export class McpHostProtocolEvalsServer {
     report += `• ✅ Passed: ${passedFeatures.length}\n`;
     report += `• ❌ Failed: ${failedFeatures.length}\n`;
     report += `• 📈 Pass Rate: ${passRate}%\n\n`;
+    report += `🔍 **Detailed Test Results**\n\n`;
+    report += `• **Passed Features**: ${passedFeatures.join(", ")}\n`;
+    report += `• **Failed Features**: ${failedFeatures.join(", ")}\n`;
+    report += `• **Manual Test Cases**: ${manualTasks.map(task => task.title).join(", ")}\n`;
 
     return {
       content: [
