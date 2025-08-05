@@ -22,6 +22,7 @@ class HttpMcpServer {
   constructor(private options: HttpMcpServerOptions) {
     this.httpServer = express();
     this.httpServer.use(express.json());
+
     this.initializeRoutes();
   }
 

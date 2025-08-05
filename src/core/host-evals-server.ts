@@ -550,6 +550,8 @@ export class McpHostProtocolEvalsServer {
   private _triggerRootList() {
     this.server.server.listRoots().then(roots => {
       this.tracker.recordFeatureCall("roots/list", true);
+    }).catch(() => {
+      this.logger.warn("Failed to trigger roots/list event, skip this step");
     });
   }
 
@@ -567,6 +569,8 @@ export class McpHostProtocolEvalsServer {
       maxTokens: 100,
     }).then(res => {
       this.tracker.recordFeatureCall("sampling/createMessage", true);
+    }).catch(() => {
+      this.logger.warn("Failed to trigger sampling/createMessage event, skip this step");
     })
   }
 
@@ -586,6 +590,8 @@ export class McpHostProtocolEvalsServer {
       }
     }).then(res => {
       this.tracker.recordFeatureCall("elicitation/create", true);
+    }).catch(() => {
+      this.logger.warn("Failed to trigger elicitation/create event, skip this step");
     })
   }
 
@@ -705,6 +711,8 @@ export class McpHostProtocolEvalsServer {
       case "notifications/tools/list_changed":
         await this.server.server.notification({
           method: eventType,
+        }).catch(() => {
+          this.logger.warn(`Failed to trigger ${eventType} event, skip this step`);
         });
         break;
       case "notifications/resources/updated":
@@ -714,6 +722,8 @@ export class McpHostProtocolEvalsServer {
             uri: TEST_RESOURCE_URI,
             title: "Test Resource",
           }
+        }).catch(() => {
+          this.logger.warn("Failed to trigger notifications/resources/updated event, skip this step");
         });
         break;
 
@@ -724,6 +734,8 @@ export class McpHostProtocolEvalsServer {
           params: {
             progressMessage: this.progressMessage,
           },
+        }).catch(() => {
+          this.logger.warn("Failed to trigger notifications/progress event, skip this step");
         });
         break;
       case "notifications/message":
@@ -737,6 +749,8 @@ export class McpHostProtocolEvalsServer {
               message: this.logMessage,
             },
           },
+        }).catch(() => {
+          this.logger.warn("Failed to trigger notifications/message event, skip this step");
         });
         break;
 

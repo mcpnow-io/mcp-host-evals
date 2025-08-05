@@ -66,4 +66,13 @@ const DEFAULT_LOG_DIR = path.join(__dirname, './logs');
 
     cli.version(version).help();
     cli.parse();
+
+
+    process.on("uncaughtException", (err) => {
+        console.error(`Uncaught Exception: ${err.stack || err}`);
+    });
+
+    process.on("unhandledRejection", (reason) => {
+        console.error(`Unhandled Rejection: ${reason}`);
+    });
 })();
