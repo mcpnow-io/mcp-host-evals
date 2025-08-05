@@ -14,7 +14,6 @@ export const PASSIVE_FEATURES = [
   "resources/read",
   "resources/templates/list",
 
-  // TODO: unimplemented. resources subscribe, unimplemented.
   "resources/subscribe",
   "resources/unsubscribe",
 
